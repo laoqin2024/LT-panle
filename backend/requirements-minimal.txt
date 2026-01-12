@@ -1,0 +1,33 @@
+# 最小依赖版本（如果完整安装失败，可以先安装这些）
+# 使用方法: pip install -r requirements-minimal.txt
+
+# FastAPI核心（必需）
+fastapi
+uvicorn[standard]
+python-multipart
+
+# 数据库（必需）
+sqlalchemy
+alembic
+asyncpg
+psycopg2-binary
+
+# 认证和安全（必需）
+python-jose[cryptography]
+passlib[bcrypt]
+cryptography
+
+# 工具库（必需）
+pydantic
+pydantic-settings
+python-dotenv
+
+# 其他（可选，可以后续安装）
+# redis
+# celery
+# paramiko
+# netmiko
+# pysnmp
+# websockets
+# httpx
+

@@ -8,6 +8,14 @@
 #   2. 添加所有更改的文件
 #   3. 提交更改（支持自定义提交信息）
 #   4. 推送到 GitHub 和 Gitee 两个远程仓库
+# 
+# 使用方法：
+#   ./sync_repos.sh [提交信息] [选项]
+#   选项：
+#     --skip-github    跳过 GitHub 推送
+#     --skip-gitee     跳过 Gitee 推送
+#     --github-only    只推送到 GitHub
+#     --gitee-only     只推送到 Gitee
 # ============================================
 
 # 颜色定义（用于输出美化）
@@ -159,11 +167,49 @@ show_status() {
     echo ""
 }
 
+# 解析命令行参数
+SKIP_GITHUB=false
+SKIP_GITEE=false
+COMMIT_MESSAGE=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --skip-github)
+            SKIP_GITHUB=true
+            shift
+            ;;
+        --skip-gitee)
+            SKIP_GITEE=true
+            shift
+            ;;
+        --github-only)
+            SKIP_GITEE=true
+            shift
+            ;;
+        --gitee-only)
+            SKIP_GITHUB=true
+            shift
+            ;;
+        *)
+            if [ -z "$COMMIT_MESSAGE" ]; then
+                COMMIT_MESSAGE="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
 # 主函数
 main() {
     print_info "========================================="
     print_info "开始同步代码到 GitHub 和 Gitee"
     print_info "========================================="
+    if [ "$SKIP_GITHUB" = true ]; then
+        print_warning "将跳过 GitHub 推送"
+    fi
+    if [ "$SKIP_GITEE" = true ]; then
+        print_warning "将跳过 Gitee 推送"
+    fi
     echo ""
     
     # 显示当前状态
@@ -183,12 +229,12 @@ main() {
         git add .
         
         # 获取提交信息
-        if [ -z "$1" ]; then
+        if [ -z "$COMMIT_MESSAGE" ]; then
             # 如果没有提供提交信息，则提示输入
             print_info "请输入提交信息:"
             read -p "> " commit_message
         else
-            commit_message="$1"
+            commit_message="$COMMIT_MESSAGE"
         fi
         
         # 如果提交信息为空，使用默认信息
@@ -217,46 +263,67 @@ main() {
     print_info "开始推送到远程仓库"
     print_info "========================================="
     
+    # 获取当前分支
+    current_branch=$(git branch --show-current)
+    if [ -z "$current_branch" ]; then
+        print_error "无法确定当前分支，请先创建并切换到分支"
+        exit 1
+    fi
+    print_info "当前分支: $current_branch"
+    echo ""
+    
     # 推送到 GitHub
-    if check_remote "github"; then
-        print_info "推送到 GitHub..."
-        git push github main 2>/dev/null || git push github master 2>/dev/null || {
-            # 如果 main 和 master 都不存在，尝试创建并推送
-            current_branch=$(git branch --show-current)
-            if [ -n "$current_branch" ]; then
-                git push -u github "$current_branch"
-            else
-                print_error "无法确定当前分支"
-            fi
-        }
+    if [ "$SKIP_GITHUB" = false ] && check_remote "github"; then
+        print_info "推送到 GitHub ($current_branch)..."
+        github_url=$(git remote get-url github)
+        print_info "远程地址: $github_url"
         
-        if [ $? -eq 0 ]; then
+        # 尝试推送到当前分支
+        if git push -u github "$current_branch" 2>&1; then
             print_success "GitHub 推送成功"
         else
-            print_error "GitHub 推送失败"
+            push_exit_code=$?
+            if [ $push_exit_code -eq 128 ]; then
+                print_error "GitHub 推送失败: 认证失败或网络错误"
+                print_warning "请检查："
+                print_warning "  1. SSH 密钥或 Personal Access Token 是否配置正确"
+                print_warning "  2. 网络连接是否正常"
+                print_warning "  3. 仓库地址是否正确"
+            else
+                print_error "GitHub 推送失败 (退出码: $push_exit_code)"
+            fi
         fi
+        echo ""
     else
         print_warning "GitHub 远程仓库未配置，跳过"
     fi
     
     # 推送到 Gitee
-    if check_remote "gitee"; then
-        print_info "推送到 Gitee..."
-        git push gitee main 2>/dev/null || git push gitee master 2>/dev/null || {
-            # 如果 main 和 master 都不存在，尝试创建并推送
-            current_branch=$(git branch --show-current)
-            if [ -n "$current_branch" ]; then
-                git push -u gitee "$current_branch"
-            else
-                print_error "无法确定当前分支"
-            fi
-        }
+    if [ "$SKIP_GITEE" = false ] && check_remote "gitee"; then
+        print_info "推送到 Gitee ($current_branch)..."
+        gitee_url=$(git remote get-url gitee)
+        print_info "远程地址: $gitee_url"
+        print_warning "如果推送卡住，可能是需要输入密码或 token"
+        print_warning "请确保已配置 SSH 密钥或使用 HTTPS + Personal Access Token"
+        echo ""
         
-        if [ $? -eq 0 ]; then
+        # 尝试推送到当前分支（显示详细输出）
+        if git push -u gitee "$current_branch" 2>&1; then
             print_success "Gitee 推送成功"
         else
-            print_error "Gitee 推送失败"
+            push_exit_code=$?
+            if [ $push_exit_code -eq 128 ]; then
+                print_error "Gitee 推送失败: 认证失败或网络错误"
+                print_warning "请检查："
+                print_warning "  1. SSH 密钥或 Personal Access Token 是否配置正确"
+                print_warning "  2. 网络连接是否正常（Gitee 可能需要特殊网络环境）"
+                print_warning "  3. 仓库地址是否正确"
+                print_warning "  4. 如果使用 HTTPS，请确保已配置凭据存储"
+            else
+                print_error "Gitee 推送失败 (退出码: $push_exit_code)"
+            fi
         fi
+        echo ""
     else
         print_warning "Gitee 远程仓库未配置，跳过"
     fi
@@ -268,5 +335,4 @@ main() {
 }
 
 # 执行主函数
-# 如果提供了参数，则作为提交信息使用
-main "$@"
+main

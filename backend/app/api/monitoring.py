@@ -21,6 +21,7 @@ from app.api.schemas import (
     SiteAvailability,
     DatabaseMetric,
     AlertRuleCreate,
+    AlertRuleUpdate,
     AlertRuleResponse,
     AlertRuleListResponse,
     AlertHistoryListResponse,
@@ -319,6 +320,84 @@ async def create_alert_rule(
         description=value.get("description"),
         created_at=setting.updated_at or datetime.now(),
         updated_at=setting.updated_at or datetime.now(),
+    )
+
+
+@router.put("/alert-rules/{rule_id}", response_model=AlertRuleResponse, summary="更新告警规则")
+async def update_alert_rule(
+    rule_id: int,
+    rule_data: AlertRuleUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    更新告警规则
+    """
+    result = await db.execute(
+        select(Setting).where(
+            Setting.id == rule_id,
+            Setting.category == "alert_rule"
+        )
+    )
+    setting = result.scalar_one_or_none()
+    
+    if not setting:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="告警规则不存在"
+        )
+    
+    # 解析现有值
+    try:
+        value = json.loads(setting.value) if setting.value else {}
+    except:
+        value = {}
+    
+    # 更新字段
+    update_data = rule_data.model_dump(exclude_unset=True)
+    for field, field_value in update_data.items():
+        value[field] = field_value
+    
+    # 如果更新了名称，检查是否与其他规则冲突
+    if rule_data.name and rule_data.name != value.get("name"):
+        existing = await db.execute(
+            select(Setting).where(
+                Setting.category == "alert_rule",
+                Setting.key == f"alert_rule_{rule_data.name}",
+                Setting.id != rule_id
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="告警规则名称已存在"
+            )
+        value["name"] = rule_data.name
+        setting.key = f"alert_rule_{rule_data.name}"
+    
+    # 更新设置
+    setting.value = json.dumps(value)
+    if rule_data.description is not None:
+        setting.description = rule_data.description
+    setting.updated_by = current_user.id
+    
+    await db.commit()
+    await db.refresh(setting)
+    
+    value = json.loads(setting.value)
+    return AlertRuleResponse(
+        id=setting.id,
+        name=value["name"],
+        resource_type=value["resource_type"],
+        resource_id=value.get("resource_id"),
+        metric_name=value["metric_name"],
+        condition=value["condition"],
+        threshold=value["threshold"],
+        duration=value.get("duration", 60),
+        enabled=value.get("enabled", True),
+        description=value.get("description"),
+        created_at=setting.updated_at or datetime.now(),
+        updated_at=datetime.now(),
     )
 
 

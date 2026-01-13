@@ -13,6 +13,18 @@ export interface BusinessSite {
   last_response_time?: number
   ssl_expiry?: string
   is_monitored: boolean
+  // 检查配置
+  check_interval?: number
+  check_timeout?: number
+  check_config?: Record<string, any>
+  // 维护模式
+  is_maintenance: boolean
+  maintenance_start?: string
+  maintenance_end?: string
+  maintenance_note?: string
+  // 健康度评分
+  health_score?: number
+  health_score_updated_at?: string
   created_at: string
   updated_at: string
   group?: BusinessGroup
@@ -50,6 +62,15 @@ export interface BusinessSiteUpdate {
   group_id?: number
   description?: string
   is_monitored?: boolean
+  // 检查配置
+  check_interval?: number
+  check_timeout?: number
+  check_config?: Record<string, any>
+  // 维护模式
+  is_maintenance?: boolean
+  maintenance_start?: string
+  maintenance_end?: string
+  maintenance_note?: string
 }
 
 // API方法
@@ -151,3 +172,48 @@ export const deleteGroup = async (groupId: number): Promise<{ message: string; s
   return api.delete(`/sites/groups/${groupId}`)
 }
 
+/**
+ * 立即检查站点
+ */
+export const checkSiteNow = async (siteId: number): Promise<{
+  success: boolean
+  status: string
+  response_time?: number
+  status_code?: number
+  ssl_expiry?: string
+  message: string
+}> => {
+  return api.post(`/sites/${siteId}/check`)
+}
+
+/**
+ * 批量删除站点
+ */
+export const batchDeleteSites = async (siteIds: number[]): Promise<{ message: string; success: boolean }> => {
+  return api.post('/sites/batch/delete', siteIds)
+}
+
+/**
+ * 批量更新监控状态
+ */
+export const batchUpdateMonitoring = async (siteIds: number[], isMonitored: boolean): Promise<{ message: string; success: boolean }> => {
+  return api.post('/sites/batch/update-monitoring', {
+    site_ids: siteIds,
+    is_monitored: isMonitored
+  })
+}
+
+/**
+ * 计算站点健康度评分
+ */
+export const calculateHealthScore = async (siteId: number): Promise<{
+  health_score: number
+  breakdown: {
+    status_score: number
+    response_time_score: number
+    availability_score: number
+    ssl_score: number
+  }
+}> => {
+  return api.get(`/sites/${siteId}/health-score`)
+}

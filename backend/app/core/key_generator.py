@@ -25,19 +25,19 @@ def generate_secret_key(length: int = 64) -> str:
 
 def generate_encryption_key(length: int = 32) -> str:
     """
-    生成AES加密密钥
+    生成Fernet加密密钥（URL-safe base64编码）
     
     Args:
         length: 密钥长度（字节），默认32字节（256位）
     
     Returns:
-        Base64编码的密钥字符串
+        URL-safe Base64编码的密钥字符串（Fernet格式）
     """
     import base64
     # 生成随机字节
     key_bytes = secrets.token_bytes(length)
-    # 转换为Base64编码
-    return base64.b64encode(key_bytes).decode('utf-8')
+    # 转换为URL-safe Base64编码（Fernet要求）
+    return base64.urlsafe_b64encode(key_bytes).decode('utf-8')
 
 
 def ensure_env_file(env_path: Optional[Path] = None) -> Path:

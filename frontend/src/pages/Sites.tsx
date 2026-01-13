@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Globe, Plus, Settings, Trash2, Activity, ExternalLink, Folder, Filter, X } from 'lucide-react'
-import { getSites, getGroups, deleteSite, createSite, updateSite, type BusinessSite, type BusinessGroup, type BusinessSiteCreate, type BusinessSiteUpdate } from '../services/sites'
+import { Globe, Plus, Settings, Trash2, Activity, ExternalLink, Folder, Filter, X, CheckSquare, Square, RefreshCw, Edit2 } from 'lucide-react'
+import { getSites, getGroups, deleteSite, createSite, updateSite, checkSiteNow, batchDeleteSites, batchUpdateMonitoring, createGroup, updateGroup, deleteGroup, type BusinessSite, type BusinessGroup, type BusinessSiteCreate, type BusinessSiteUpdate } from '../services/sites'
 import Loading from '../components/Loading'
 
 export default function Sites() {
@@ -15,6 +15,9 @@ export default function Sites() {
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [editingSite, setEditingSite] = useState<BusinessSite | null>(null)
+  const [selectedSites, setSelectedSites] = useState<Set<number>>(new Set())
+  const [checkingSite, setCheckingSite] = useState<number | null>(null)
+  const [showGroupManager, setShowGroupManager] = useState(false)
 
   // 加载数据
   useEffect(() => {
@@ -83,6 +86,107 @@ export default function Sites() {
       }
       alert(errorMessage)
       console.error('删除站点失败:', err)
+    }
+  }
+
+  const handleCheckNow = async (siteId: number) => {
+    try {
+      setCheckingSite(siteId)
+      const result = await checkSiteNow(siteId)
+      if (result.success) {
+        alert(`检查完成：${result.message}\n状态：${getStatusText(result.status)}\n响应时间：${result.response_time}ms`)
+        loadData()
+      } else {
+        alert(`检查失败：${result.message}`)
+      }
+    } catch (err: any) {
+      let errorMessage = '检查失败'
+      if (err.response?.data?.detail) {
+        if (typeof err.response.data.detail === 'string') {
+          errorMessage = err.response.data.detail
+        } else if (Array.isArray(err.response.data.detail)) {
+          errorMessage = err.response.data.detail.map((e: any) => e.msg || e.message).join('; ')
+        }
+      } else if (err.message) {
+        errorMessage = err.message
+      }
+      alert(errorMessage)
+      console.error('检查站点失败:', err)
+    } finally {
+      setCheckingSite(null)
+    }
+  }
+
+  const handleToggleSelect = (siteId: number) => {
+    const newSelected = new Set(selectedSites)
+    if (newSelected.has(siteId)) {
+      newSelected.delete(siteId)
+    } else {
+      newSelected.add(siteId)
+    }
+    setSelectedSites(newSelected)
+  }
+
+  const handleSelectAll = () => {
+    if (selectedSites.size === sites.length) {
+      setSelectedSites(new Set())
+    } else {
+      setSelectedSites(new Set(sites.map(s => s.id)))
+    }
+  }
+
+  const handleBatchDelete = async () => {
+    if (selectedSites.size === 0) {
+      alert('请至少选择一个站点')
+      return
+    }
+    if (!window.confirm(`确定要删除选中的 ${selectedSites.size} 个站点吗？`)) {
+      return
+    }
+
+    try {
+      await batchDeleteSites(Array.from(selectedSites))
+      setSelectedSites(new Set())
+      loadData()
+    } catch (err: any) {
+      let errorMessage = '批量删除失败'
+      if (err.response?.data?.detail) {
+        if (typeof err.response.data.detail === 'string') {
+          errorMessage = err.response.data.detail
+        } else if (Array.isArray(err.response.data.detail)) {
+          errorMessage = err.response.data.detail.map((e: any) => e.msg || e.message).join('; ')
+        }
+      } else if (err.message) {
+        errorMessage = err.message
+      }
+      alert(errorMessage)
+      console.error('批量删除失败:', err)
+    }
+  }
+
+  const handleBatchUpdateMonitoring = async (isMonitored: boolean) => {
+    if (selectedSites.size === 0) {
+      alert('请至少选择一个站点')
+      return
+    }
+
+    try {
+      await batchUpdateMonitoring(Array.from(selectedSites), isMonitored)
+      setSelectedSites(new Set())
+      loadData()
+    } catch (err: any) {
+      let errorMessage = '批量更新失败'
+      if (err.response?.data?.detail) {
+        if (typeof err.response.data.detail === 'string') {
+          errorMessage = err.response.data.detail
+        } else if (Array.isArray(err.response.data.detail)) {
+          errorMessage = err.response.data.detail.map((e: any) => e.msg || e.message).join('; ')
+        }
+      } else if (err.message) {
+        errorMessage = err.message
+      }
+      alert(errorMessage)
+      console.error('批量更新失败:', err)
     }
   }
 
@@ -159,16 +263,41 @@ export default function Sites() {
           <h1 className="text-3xl font-bold text-gray-900">业务站点管理</h1>
           <p className="text-gray-600 mt-1">管理和监控业务站点状态</p>
         </div>
-        <button 
-          className="btn-primary flex items-center gap-2"
-          onClick={() => {
-            setEditingSite(null)
-            setShowForm(true)
-          }}
-        >
-          <Plus className="w-5 h-5" />
-          添加站点
-        </button>
+        <div className="flex items-center gap-2">
+          {selectedSites.size > 0 && (
+            <div className="flex items-center gap-2 mr-4">
+              <span className="text-sm text-gray-600">已选择 {selectedSites.size} 个站点</span>
+              <button
+                className="btn-secondary text-sm px-3 py-1"
+                onClick={() => handleBatchUpdateMonitoring(true)}
+              >
+                启用监控
+              </button>
+              <button
+                className="btn-secondary text-sm px-3 py-1"
+                onClick={() => handleBatchUpdateMonitoring(false)}
+              >
+                禁用监控
+              </button>
+              <button
+                className="btn-secondary text-sm px-3 py-1 text-red-600 hover:text-red-700"
+                onClick={handleBatchDelete}
+              >
+                批量删除
+              </button>
+            </div>
+          )}
+          <button 
+            className="btn-primary flex items-center gap-2"
+            onClick={() => {
+              setEditingSite(null)
+              setShowForm(true)
+            }}
+          >
+            <Plus className="w-5 h-5" />
+            添加站点
+          </button>
+        </div>
       </div>
 
       {/* 筛选和搜索 */}
@@ -201,6 +330,14 @@ export default function Sites() {
                   {group.name}
                 </button>
               ))}
+              <button
+                onClick={() => setShowGroupManager(true)}
+                className="px-3 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 flex items-center gap-1"
+                title="管理分组"
+              >
+                <Settings className="w-4 h-4" />
+                管理分组
+              </button>
             </div>
           </div>
 
@@ -238,10 +375,38 @@ export default function Sites() {
 
       {/* 站点列表 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {sites.length > 0 && (
+          <div className="col-span-full flex items-center gap-2 mb-2">
+            <button
+              onClick={handleSelectAll}
+              className="p-2 hover:bg-gray-100 rounded-lg"
+              title={selectedSites.size === sites.length ? '取消全选' : '全选'}
+            >
+              {selectedSites.size === sites.length ? (
+                <CheckSquare className="w-5 h-5 text-primary-600" />
+              ) : (
+                <Square className="w-5 h-5 text-gray-400" />
+              )}
+            </button>
+            <span className="text-sm text-gray-600">全选</span>
+          </div>
+        )}
         {sites.map((site) => (
           <div key={site.id} className="card hover:shadow-lg transition-shadow">
             {/* 站点头部 */}
             <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleToggleSelect(site.id)}
+                  className="p-1 hover:bg-gray-100 rounded"
+                >
+                  {selectedSites.has(site.id) ? (
+                    <CheckSquare className="w-4 h-4 text-primary-600" />
+                  ) : (
+                    <Square className="w-4 h-4 text-gray-400" />
+                  )}
+                </button>
+              </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
                   <Globe className="w-5 h-5 text-gray-600" />
@@ -309,16 +474,30 @@ export default function Sites() {
               </button>
               <button 
                 className="p-2 hover:bg-gray-100 rounded-lg"
+                onClick={() => handleCheckNow(site.id)}
+                disabled={checkingSite === site.id}
+                title="立即检查"
+              >
+                {checkingSite === site.id ? (
+                  <RefreshCw className="w-4 h-4 text-gray-600 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4 text-gray-600" />
+                )}
+              </button>
+              <button 
+                className="p-2 hover:bg-gray-100 rounded-lg"
                 onClick={() => {
                   setEditingSite(site)
                   setShowForm(true)
                 }}
+                title="编辑"
               >
                 <Settings className="w-4 h-4 text-gray-600" />
               </button>
               <button 
                 className="p-2 hover:bg-gray-100 rounded-lg"
                 onClick={() => handleDelete(site.id)}
+                title="删除"
               >
                 <Trash2 className="w-4 h-4 text-red-600" />
               </button>
@@ -361,6 +540,299 @@ export default function Sites() {
           }}
         />
       )}
+
+      {/* 分组管理对话框 */}
+      {showGroupManager && (
+        <GroupManager
+          groups={groups}
+          onClose={() => setShowGroupManager(false)}
+          onSuccess={() => {
+            setShowGroupManager(false)
+            loadData()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// 分组管理组件
+function GroupManager({
+  groups,
+  onClose,
+  onSuccess
+}: {
+  groups: BusinessGroup[]
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [editingGroup, setEditingGroup] = useState<BusinessGroup | null>(null)
+  const [formData, setFormData] = useState({
+    name: '',
+    type: '',
+    description: '',
+    sort_order: 0,
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      setSaving(true)
+      setError(null)
+
+      if (!formData.name.trim()) {
+        setError('分组名称不能为空')
+        return
+      }
+
+      if (editingGroup) {
+        await updateGroup(editingGroup.id, {
+          name: formData.name,
+          type: formData.type || undefined,
+          description: formData.description || undefined,
+          sort_order: formData.sort_order,
+        })
+      } else {
+        await createGroup({
+          name: formData.name,
+          type: formData.type || undefined,
+          description: formData.description || undefined,
+          sort_order: formData.sort_order,
+        })
+      }
+
+      // 重置表单
+      setFormData({ name: '', type: '', description: '', sort_order: 0 })
+      setEditingGroup(null)
+      onSuccess()
+    } catch (err: any) {
+      let errorMessage = editingGroup ? '更新失败' : '创建失败'
+      if (err.response?.data?.detail) {
+        if (typeof err.response.data.detail === 'string') {
+          errorMessage = err.response.data.detail
+        } else if (Array.isArray(err.response.data.detail)) {
+          errorMessage = err.response.data.detail.map((e: any) => e.msg || e.message).join('; ')
+        }
+      } else if (err.message) {
+        errorMessage = err.message
+      }
+      setError(errorMessage)
+      console.error('保存分组失败:', err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleEdit = (group: BusinessGroup) => {
+    setEditingGroup(group)
+    setFormData({
+      name: group.name,
+      type: group.type || '',
+      description: group.description || '',
+      sort_order: group.sort_order,
+    })
+  }
+
+  const handleDelete = async (groupId: number) => {
+    if (!window.confirm('确定要删除这个分组吗？如果分组下有站点，需要先移除站点。')) {
+      return
+    }
+
+    try {
+      setDeletingId(groupId)
+      await deleteGroup(groupId)
+      onSuccess()
+    } catch (err: any) {
+      let errorMessage = '删除失败'
+      if (err.response?.data?.detail) {
+        if (typeof err.response.data.detail === 'string') {
+          errorMessage = err.response.data.detail
+        } else if (Array.isArray(err.response.data.detail)) {
+          errorMessage = err.response.data.detail.map((e: any) => e.msg || e.message).join('; ')
+        }
+      } else if (err.message) {
+        errorMessage = err.message
+      }
+      alert(errorMessage)
+      console.error('删除分组失败:', err)
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const handleCancel = () => {
+    setEditingGroup(null)
+    setFormData({ name: '', type: '', description: '', sort_order: 0 })
+    setError(null)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+          <h2 className="text-xl font-bold text-gray-900">分组管理</h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-lg"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6">
+          {/* 分组列表 */}
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">分组列表</h3>
+            {groups.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <Folder className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                <p>暂无分组</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {groups.map((group) => (
+                  <div
+                    key={group.id}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <Folder className="w-4 h-4 text-gray-500" />
+                        <span className="font-medium text-gray-900">{group.name}</span>
+                        {group.type && (
+                          <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
+                            {group.type}
+                          </span>
+                        )}
+                      </div>
+                      {group.description && (
+                        <p className="text-sm text-gray-600 mt-1 ml-6">{group.description}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleEdit(group)}
+                        className="p-2 hover:bg-gray-200 rounded-lg"
+                        title="编辑"
+                      >
+                        <Edit2 className="w-4 h-4 text-gray-600" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(group.id)}
+                        disabled={deletingId === group.id}
+                        className="p-2 hover:bg-gray-200 rounded-lg"
+                        title="删除"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-600" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 添加/编辑表单 */}
+          <div className="border-t border-gray-200 pt-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              {editingGroup ? '编辑分组' : '添加分组'}
+            </h3>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg">
+                  {error}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    分组名称 <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    placeholder="请输入分组名称"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    分组类型
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.type}
+                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    placeholder="如：业务系统、测试环境等"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  描述
+                </label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  rows={3}
+                  placeholder="请输入分组描述（可选）"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  排序顺序
+                </label>
+                <input
+                  type="number"
+                  value={formData.sort_order}
+                  onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value) || 0 })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="数字越小越靠前"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+                {editingGroup && (
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                    disabled={saving}
+                  >
+                    取消编辑
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  disabled={saving}
+                >
+                  关闭
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary px-4 py-2"
+                  disabled={saving}
+                >
+                  {saving ? '保存中...' : editingGroup ? '更新' : '创建'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

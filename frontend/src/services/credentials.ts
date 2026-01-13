@@ -32,6 +32,7 @@ export interface CredentialCreate {
 }
 
 export interface CredentialUpdate {
+  credential_type?: string
   username?: string
   password?: string
   ssh_key_path?: string
@@ -116,4 +117,20 @@ export const getCredentialLogs = async (
   }
 ): Promise<{ total: number; items: CredentialAccessLog[] }> => {
   return api.get(`/credentials/${credentialId}/logs`, { params })
+}
+
+/**
+ * 测试凭据连接
+ */
+export const testCredentialConnection = async (
+  credentialId: number
+): Promise<{
+  success: boolean
+  message: string
+  output?: string
+  server_host?: string
+  server_port?: number
+  username?: string
+}> => {
+  return api.post(`/credentials/${credentialId}/test`)
 }

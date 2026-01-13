@@ -1,8 +1,11 @@
 from datetime import datetime, timedelta
 from typing import Optional
-from jose import JWTError, jwt
+from jose import jwt
 from passlib.context import CryptContext
 from app.core.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 # 密码加密上下文
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -54,9 +57,25 @@ def create_refresh_token(data: dict) -> str:
 
 def verify_token(token: str) -> Optional[dict]:
     """验证令牌"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    if not token:
+        logger.warning("Token为空")
+        return None
+    
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
-    except JWTError:
+    except jwt.ExpiredSignatureError:
+        logger.warning("Token已过期")
+        return None
+    except jwt.InvalidTokenError as e:
+        # 记录详细的错误信息用于调试
+        logger.warning(f"Token验证失败: {type(e).__name__}: {str(e)}")
+        return None
+    except Exception as e:
+        # 处理其他可能的异常
+        logger.error(f"Token验证异常: {type(e).__name__}: {str(e)}", exc_info=True)
         return None
 

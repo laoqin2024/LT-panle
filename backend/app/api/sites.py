@@ -464,4 +464,367 @@ async def get_site_status(
     }
 
 
+@router.get("/{site_id}/health-score", summary="计算站点健康度评分")
+async def calculate_health_score(
+    site_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    计算站点健康度评分（0-100）
+    
+    评分规则：
+    - 站点状态：在线(30分)、异常(15分)、离线(0分)
+    - 响应时间：<500ms(30分)、500-1000ms(20分)、1000-2000ms(10分)、>2000ms(0分)
+    - 可用性：过去7天可用性百分比 * 0.3
+    - SSL证书：未过期(10分)、30天内过期(5分)、已过期(0分)
+    """
+    result = await db.execute(
+        select(BusinessSite).where(BusinessSite.id == site_id)
+    )
+    site = result.scalar_one_or_none()
+    
+    if not site:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="站点不存在"
+        )
+    
+    score = 0
+    
+    # 1. 站点状态评分（30分）
+    if site.status == "online":
+        score += 30
+    elif site.status == "warning":
+        score += 15
+    # offline 或 unknown 为 0 分
+    
+    # 2. 响应时间评分（30分）
+    if site.last_response_time:
+        if site.last_response_time < 500:
+            score += 30
+        elif site.last_response_time < 1000:
+            score += 20
+        elif site.last_response_time < 2000:
+            score += 10
+        # >2000ms 为 0 分
+    
+    # 3. 可用性评分（30分）- 需要查询历史数据
+    # 这里简化处理，如果有last_check且状态为online，给满分
+    # 实际应该查询过去7天的可用性数据
+    from datetime import datetime, timezone, timedelta
+    if site.status == "online" and site.last_check:
+        time_diff = datetime.now(timezone.utc) - site.last_check
+        if time_diff < timedelta(hours=1):
+            score += 30
+        elif time_diff < timedelta(hours=24):
+            score += 20
+        else:
+            score += 10
+    
+    # 4. SSL证书评分（10分）
+    if site.ssl_expiry:
+        now = datetime.now(timezone.utc)
+        expiry = site.ssl_expiry
+        days_until_expiry = (expiry - now).days
+        
+        if days_until_expiry > 30:
+            score += 10
+        elif days_until_expiry > 0:
+            score += 5
+        # 已过期为 0 分
+    
+    # 更新站点健康度评分
+    site.health_score = min(100, max(0, score))
+    site.health_score_updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    
+    return {
+        "health_score": site.health_score,
+        "breakdown": {
+            "status_score": 30 if site.status == "online" else (15 if site.status == "warning" else 0),
+            "response_time_score": (
+                30 if site.last_response_time and site.last_response_time < 500
+                else (20 if site.last_response_time and site.last_response_time < 1000
+                else (10 if site.last_response_time and site.last_response_time < 2000 else 0))
+            ),
+            "availability_score": 30 if site.status == "online" and site.last_check else 0,
+            "ssl_score": 10 if site.ssl_expiry and (site.ssl_expiry - datetime.now(timezone.utc)).days > 30 else 0,
+        }
+    }
+
+
+@router.post("/{site_id}/check", summary="立即检查站点")
+async def check_site_now(
+    site_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    立即检查站点状态
+    
+    触发一次站点健康检查，更新站点状态、响应时间和SSL证书信息
+    """
+    result = await db.execute(
+        select(BusinessSite).where(BusinessSite.id == site_id)
+    )
+    site = result.scalar_one_or_none()
+    
+    if not site:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="站点不存在"
+        )
+    
+    # TODO: 这里应该调用实际的站点检查服务
+    # 目前先返回一个模拟的检查结果
+    # 实际实现时应该：
+    # 1. 发送HTTP请求检查站点
+    # 2. 检查SSL证书过期时间
+    # 3. 更新站点状态
+    
+    from datetime import datetime, timezone
+    import httpx
+    import ssl
+    import socket
+    from urllib.parse import urlparse
+    
+    ssl_error_message = None
+    try:
+        # 检查站点响应
+        # 使用站点配置的超时时间，如果没有配置则使用默认值
+        timeout = site.check_timeout if site.check_timeout else 10.0
+        
+        # 对于HTTPS站点，如果证书验证失败，先尝试不验证证书（用于自签名或IP地址访问）
+        verify_ssl = True
+        parsed = urlparse(site.url)
+        is_https = site.url.startswith("https://")
+        
+        # 如果是IP地址访问HTTPS，可能需要跳过证书验证
+        if is_https:
+            try:
+                import ipaddress
+                ipaddress.ip_address(parsed.hostname)
+                # 是IP地址，可能需要跳过SSL验证
+                verify_ssl = False
+            except ValueError:
+                # 不是IP地址，正常验证
+                pass
+        
+        # 如果站点处于维护模式，跳过检查
+        if site.is_maintenance:
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            if site.maintenance_start and site.maintenance_end:
+                if site.maintenance_start <= now <= site.maintenance_end:
+                    return {
+                        "success": True,
+                        "status": "maintenance",
+                        "message": "站点处于维护模式",
+                        "maintenance_note": site.maintenance_note
+                    }
+        
+        async with httpx.AsyncClient(timeout=timeout, verify=verify_ssl) as client:
+            start_time = datetime.now(timezone.utc)
+            try:
+                response = await client.get(site.url, follow_redirects=True)
+            except httpx.ConnectError as e:
+                # 连接错误，可能是SSL验证失败
+                if is_https and "SSL" in str(e):
+                    # 尝试不验证证书
+                    async with httpx.AsyncClient(timeout=10.0, verify=False) as client_no_verify:
+                        response = await client_no_verify.get(site.url, follow_redirects=True)
+                        ssl_error_message = "SSL证书验证失败（已跳过验证）"
+                else:
+                    raise
+            end_time = datetime.now(timezone.utc)
+            
+            response_time = int((end_time - start_time).total_seconds() * 1000)
+            status_code = response.status_code
+            
+            # 判断状态
+            if status_code < 400:
+                if response_time > 2000:
+                    new_status = "warning"
+                else:
+                    new_status = "online"
+            else:
+                new_status = "offline"
+            
+            # 检查SSL证书（仅HTTPS）
+            ssl_expiry = None
+            if is_https:
+                try:
+                    hostname = parsed.hostname
+                    port = parsed.port or 443
+                    
+                    # 检查是否是IP地址
+                    is_ip_address = False
+                    try:
+                        import ipaddress
+                        ipaddress.ip_address(hostname)
+                        is_ip_address = True
+                    except ValueError:
+                        pass
+                    
+                    # 对于IP地址，创建不验证证书的上下文
+                    if is_ip_address:
+                        context = ssl.create_default_context()
+                        context.check_hostname = False
+                        context.verify_mode = ssl.CERT_NONE
+                        server_hostname = None
+                    else:
+                        # 是域名，正常验证
+                        context = ssl.create_default_context()
+                        server_hostname = hostname
+                    
+                    with socket.create_connection((hostname, port), timeout=5) as sock:
+                        with context.wrap_socket(sock, server_hostname=server_hostname) as ssock:
+                            cert = ssock.getpeercert()
+                            if cert:
+                                from datetime import datetime as dt
+                                expiry_str = cert.get('notAfter')
+                                if expiry_str:
+                                    # 处理不同的日期格式
+                                    try:
+                                        ssl_expiry = dt.strptime(expiry_str, '%b %d %H:%M:%S %Y %Z')
+                                    except ValueError:
+                                        try:
+                                            ssl_expiry = dt.strptime(expiry_str, '%b %d %H:%M:%S %Y')
+                                        except ValueError:
+                                            pass
+                                    if ssl_expiry:
+                                        ssl_expiry = ssl_expiry.replace(tzinfo=timezone.utc)
+                except Exception as e:
+                    ssl_error_message = f"SSL证书检查失败: {str(e)}"
+                    print(f"SSL证书检查失败: {e}")
+            
+            # 更新站点信息
+            site.status = new_status
+            site.last_check = datetime.now(timezone.utc)
+            site.last_response_time = response_time
+            if ssl_expiry:
+                site.ssl_expiry = ssl_expiry
+            
+            await db.commit()
+            await db.refresh(site)
+            
+            message = "检查完成"
+            if ssl_error_message:
+                message += f"（{ssl_error_message}）"
+            
+            return {
+                "success": True,
+                "status": new_status,
+                "response_time": response_time,
+                "status_code": status_code,
+                "ssl_expiry": ssl_expiry.isoformat() if ssl_expiry else None,
+                "ssl_warning": ssl_error_message,
+                "message": message
+            }
+            
+    except httpx.TimeoutException:
+        site.status = "offline"
+        site.last_check = datetime.now(timezone.utc)
+        site.last_response_time = None
+        await db.commit()
+        await db.refresh(site)
+        
+        return {
+            "success": False,
+            "status": "offline",
+            "message": "请求超时"
+        }
+    except Exception as e:
+        site.status = "offline"
+        site.last_check = datetime.now(timezone.utc)
+        site.last_response_time = None
+        await db.commit()
+        await db.refresh(site)
+        
+        return {
+            "success": False,
+            "status": "offline",
+            "message": f"检查失败: {str(e)}"
+        }
+
+
+@router.post("/batch/delete", response_model=MessageResponse, summary="批量删除站点")
+async def batch_delete_sites(
+    site_ids: List[int],
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    批量删除站点
+    """
+    if not site_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请至少选择一个站点"
+        )
+    
+    result = await db.execute(
+        select(BusinessSite).where(BusinessSite.id.in_(site_ids))
+    )
+    sites = result.scalars().all()
+    
+    if len(sites) != len(site_ids):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="部分站点不存在"
+        )
+    
+    for site in sites:
+        await db.delete(site)
+    
+    await db.commit()
+    
+    return MessageResponse(message=f"成功删除 {len(sites)} 个站点")
+
+
+@router.post("/batch/update-monitoring", response_model=MessageResponse, summary="批量更新监控状态")
+async def batch_update_monitoring(
+    request: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    批量启用/禁用站点监控
+    
+    请求体格式：
+    {
+        "site_ids": [1, 2, 3],
+        "is_monitored": true
+    }
+    """
+    site_ids = request.get("site_ids", [])
+    is_monitored = request.get("is_monitored", True)
+    
+    if not site_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请至少选择一个站点"
+        )
+    
+    result = await db.execute(
+        select(BusinessSite).where(BusinessSite.id.in_(site_ids))
+    )
+    sites = result.scalars().all()
+    
+    if len(sites) != len(site_ids):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="部分站点不存在"
+        )
+    
+    for site in sites:
+        site.is_monitored = is_monitored
+    
+    await db.commit()
+    
+    action = "启用" if is_monitored else "禁用"
+    return MessageResponse(message=f"成功{action} {len(sites)} 个站点的监控")
+
+
 

@@ -20,19 +20,31 @@ export default function Login() {
     setLoading(true)
 
     try {
-      // 调用登录API
+      // 调用登录API（使用JSON格式）
       const response = await api.post('/auth/login', {
         username: formData.username,
         password: formData.password,
       })
 
+      // 后端返回的数据中同时包含 token 和 access_token，这里兼容两种字段
+      const token = response.access_token || response.token
+
+      if (!token) {
+        throw new Error('登录响应中缺少token')
+      }
+
       // 保存token和用户信息
-      login(response.token, response.user)
+      login(token, response.user)
       
       // 跳转到仪表盘
       navigate('/dashboard')
     } catch (err: any) {
-      setError(err.response?.data?.message || '登录失败，请检查用户名和密码')
+      const message =
+        err.response?.data?.detail ||
+        err.response?.data?.message ||
+        err.message ||
+        '登录失败，请检查用户名和密码'
+      setError(message)
     } finally {
       setLoading(false)
     }

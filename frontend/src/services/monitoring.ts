@@ -157,6 +157,21 @@ export const createAlertRule = async (data: AlertRuleCreate): Promise<AlertRule>
 }
 
 /**
+ * 更新告警规则
+ */
+export const updateAlertRule = async (ruleId: number, data: {
+  name?: string
+  metric_name?: string
+  condition?: string
+  threshold?: number
+  duration?: number
+  enabled?: boolean
+  description?: string
+}): Promise<AlertRule> => {
+  return api.put(`/monitoring/alert-rules/${ruleId}`, data)
+}
+
+/**
  * 删除告警规则
  */
 export const deleteAlertRule = async (ruleId: number): Promise<{ message: string; success: boolean }> => {

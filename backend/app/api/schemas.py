@@ -126,6 +126,15 @@ class BusinessSiteUpdate(BaseModel):
     group_id: Optional[int] = None
     description: Optional[str] = None
     is_monitored: Optional[bool] = None
+    # 检查配置
+    check_interval: Optional[int] = None  # 检查间隔（秒）
+    check_timeout: Optional[int] = None  # 检查超时时间（秒）
+    check_config: Optional[dict] = None  # 其他检查配置
+    # 维护模式
+    is_maintenance: Optional[bool] = None
+    maintenance_start: Optional[datetime] = None
+    maintenance_end: Optional[datetime] = None
+    maintenance_note: Optional[str] = None
 
 
 class BusinessSiteResponse(BusinessSiteBase):
@@ -135,6 +144,18 @@ class BusinessSiteResponse(BusinessSiteBase):
     last_check: Optional[datetime] = None
     last_response_time: Optional[int] = None
     ssl_expiry: Optional[datetime] = None
+    # 检查配置
+    check_interval: Optional[int] = None
+    check_timeout: Optional[int] = None
+    check_config: Optional[dict] = None
+    # 维护模式
+    is_maintenance: bool = False
+    maintenance_start: Optional[datetime] = None
+    maintenance_end: Optional[datetime] = None
+    maintenance_note: Optional[str] = None
+    # 健康度评分
+    health_score: Optional[int] = None
+    health_score_updated_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     group: Optional[BusinessGroupResponse] = None
@@ -159,6 +180,7 @@ class ServerBase(BaseModel):
     server_type: Optional[str] = None
     network_type: str = "direct"  # direct, vpn, jump, tunnel
     jump_host_id: Optional[int] = None
+    default_credential_id: Optional[int] = None  # 默认凭据ID
     vpn_config: Optional[dict] = None
     tunnel_config: Optional[dict] = None
     description: Optional[str] = None
@@ -177,6 +199,7 @@ class ServerUpdate(BaseModel):
     server_type: Optional[str] = None
     network_type: Optional[str] = None
     jump_host_id: Optional[int] = None
+    default_credential_id: Optional[int] = None  # 默认凭据ID
     vpn_config: Optional[dict] = None
     tunnel_config: Optional[dict] = None
     description: Optional[str] = None
@@ -192,6 +215,7 @@ class ServerResponse(ServerBase):
     updated_at: datetime
     created_by: Optional[int] = None
     jump_host: Optional["ServerResponse"] = None
+    default_credential: Optional[dict] = None  # 默认凭据信息（包含id, username, description等）
 
     class Config:
         from_attributes = True
@@ -420,6 +444,7 @@ class CredentialCreate(CredentialBase):
 
 class CredentialUpdate(BaseModel):
     """更新凭据请求"""
+    credential_type: Optional[str] = None  # password, ssh_key, api_key
     username: Optional[str] = None
     password: Optional[str] = None  # 明文密码（仅用于更新）
     ssh_key_path: Optional[str] = None
@@ -754,6 +779,17 @@ class AlertRuleBase(BaseModel):
 class AlertRuleCreate(AlertRuleBase):
     """创建告警规则请求"""
     pass
+
+
+class AlertRuleUpdate(BaseModel):
+    """更新告警规则请求"""
+    name: Optional[str] = None
+    metric_name: Optional[str] = None
+    condition: Optional[str] = None
+    threshold: Optional[float] = None
+    duration: Optional[int] = None
+    enabled: Optional[bool] = None
+    description: Optional[str] = None
 
 
 class AlertRuleResponse(AlertRuleBase):

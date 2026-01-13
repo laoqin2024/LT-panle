@@ -87,3 +87,21 @@ export interface PaginatedResponse<T> {
   total_pages: number
 }
 
+// 终端会话状态
+export type TerminalSessionStatus = 'connecting' | 'connected' | 'disconnected' | 'error' | 'idle_timeout'
+
+// 终端会话
+export interface TerminalSession {
+  id: string
+  serverId: number
+  serverName?: string
+  credentialId: number
+  title: string
+  status: TerminalSessionStatus
+  ws: WebSocket | null
+  createdAt: number
+  lastActiveAt: number
+  error?: string
+  terminalInstance?: any // xterm Terminal 实例
+  fitAddon?: any // FitAddon 实例
+}

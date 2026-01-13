@@ -27,6 +27,7 @@ celery>=5.3.4
 paramiko>=3.4.0
 netmiko>=4.2.0
 pysnmp>=4.4.12
+asyncssh>=2.14.0  # 异步SSH库，推荐用于WebSocket终端
 # telnetlib3 已废弃，使用 asyncio 替代或移除
 
 # 工具库

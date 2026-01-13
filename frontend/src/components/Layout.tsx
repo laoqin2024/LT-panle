@@ -13,7 +13,7 @@ import {
   FileText,
   LogOut,
   Menu,
-  X
+  X,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useAuthStore } from '../store/authStore'

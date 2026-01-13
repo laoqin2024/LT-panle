@@ -18,6 +18,7 @@ class Server(Base):
     jump_host_id = Column(Integer, ForeignKey('servers.id'), nullable=True)  # 跳板机ID
     vpn_config = Column(JSON, nullable=True)  # VPN配置
     tunnel_config = Column(JSON, nullable=True)  # 内网穿透配置
+    default_credential_id = Column(Integer, ForeignKey('credentials.id'), nullable=True)  # 默认凭据ID
     description = Column(Text)
     last_check = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -26,6 +27,7 @@ class Server(Base):
     
     # 关系
     jump_host = relationship("Server", remote_side=[id])
+    default_credential = relationship("Credential", foreign_keys=[default_credential_id])
     # credentials 关系在 Credential 模型中定义（多态关系）
     created_by_user = relationship("User", foreign_keys=[created_by])
 

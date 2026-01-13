@@ -3,7 +3,7 @@ import axios, { AxiosInstance, AxiosError } from 'axios'
 // 创建axios实例
 const api: AxiosInstance = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000/api',
-  timeout: 30000,
+  timeout: 60000, // 增加到60秒，因为TimescaleDB查询可能需要更长时间
   headers: {
     'Content-Type': 'application/json',
   },
@@ -47,7 +47,15 @@ api.interceptors.response.use(
       
       switch (error.response.status) {
         case 401:
-          // 未授权，清除token并跳转到登录页
+          // 未授权，但需要区分是用户认证失败还是业务错误
+          const errorMessage = responseData?.detail || error.message || ''
+          // 如果是SSH相关错误，不应该退出登录
+          if (errorMessage.includes('SSH') || errorMessage.includes('ssh')) {
+            // SSH错误是业务错误，不触发登录退出
+            console.error('SSH连接错误:', errorMessage)
+            break
+          }
+          // 真正的用户认证失败，清除token并跳转到登录页
           localStorage.removeItem('token')
           window.location.href = '/login'
           break

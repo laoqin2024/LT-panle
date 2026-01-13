@@ -116,11 +116,11 @@ async def get_current_user_from_token(token: str, db: AsyncSession = None) -> Us
     """
     从token字符串获取当前用户（用于WebSocket等场景）
     """
-    from app.core.database import async_session_maker
+    from app.core.database import AsyncSessionLocal
     
     # 如果没有传入db，创建新的会话
     if db is None:
-        async with async_session_maker() as session:
+        async with AsyncSessionLocal() as session:
             return await _get_user_from_token(token, session)
     else:
         return await _get_user_from_token(token, db)
@@ -128,16 +128,21 @@ async def get_current_user_from_token(token: str, db: AsyncSession = None) -> Us
 
 async def _get_user_from_token(token: str, db: AsyncSession) -> User:
     """从token获取用户的内部函数"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     # 验证token
     payload = verify_token(token)
     if not payload:
+        logger.warning(f"Token验证失败: token前10字符={token[:10] if token else 'None'}...")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="无效的token",
+            detail="无效的token，可能已过期，请重新登录",
         )
     
     # 检查token类型
     if payload.get("type") != "access":
+        logger.warning(f"Token类型错误: type={payload.get('type')}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="无效的token类型",

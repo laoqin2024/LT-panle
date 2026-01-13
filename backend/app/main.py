@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import logging
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -14,10 +17,11 @@ app = FastAPI(
 # CORS配置
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],  # 前端开发地址
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],  # 前端开发地址
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 @app.get("/")
@@ -34,12 +38,23 @@ async def health_check():
 
 # 导入路由
 from app.api import auth, sites, servers, devices, databases, applications, credentials, backups, settings, network, monitoring, users, logs
+from app.api import server_ssh, server_info
 from app.api.websocket import websocket_monitoring
 
 # 注册路由
 app.include_router(auth.router, prefix="/api")
 app.include_router(sites.router, prefix="/api")
 app.include_router(servers.router, prefix="/api")
+app.include_router(server_ssh.router, prefix="/api")
+app.include_router(server_info.router, prefix="/api")
+
+# 注册新的asyncssh SSH终端路由（可选，用于测试）
+try:
+    from app.api import server_ssh_asyncssh
+    app.include_router(server_ssh_asyncssh.router, prefix="/api")
+    logger.info("已注册 asyncssh SSH终端路由")
+except ImportError as e:
+    logger.warning(f"无法导入 asyncssh SSH终端路由: {e}")
 app.include_router(devices.router, prefix="/api")
 app.include_router(databases.router, prefix="/api")
 app.include_router(applications.router, prefix="/api")

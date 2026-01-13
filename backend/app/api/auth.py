@@ -37,6 +37,10 @@ async def login(
     """
     用户登录接口
     
+    支持JSON和表单数据两种格式：
+    - JSON: {"username": "admin", "password": "password"}
+    - Form: username=admin&password=password
+    
     - **username**: 用户名
     - **password**: 密码
     
